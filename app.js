@@ -1,21 +1,16 @@
 (() => {
   const PREFERRED_LABEL = "203 System Cardenza";
   const MISSING = "__preferred_missing__";
-  const BROWSER_TAB = "__browser_tab_audio__";
   const STORAGE_KEY = "goho-web-sound-card-settings-v1";
   const $ = (id) => document.getElementById(id);
   const inputSelect = $("inputDevice");
   const outputSelect = $("outputDevice");
   const outputMode = $("outputMode");
-  const inputChannelSelect = $("inputChannel");
   const volumeSlider = $("volumeSlider");
   const state = {
-    devices: [], inputInfo: new Map(), inputStream: null, context: null,
-    source: null, inputSplitter: null, routeMerger: null, gain: null,
-    analyser: null, destination: null, outputStreamDestination: null, audio: $("monitorAudio"),
-    activeInputId: "", inputChannelCount: 0, inputRouteMode: "mono",
-    inputRouteStart: 0, animFrame: 0, hasPermission: false,
-    busy: false, scanning: false, probeToken: 0,
+    devices: [], inputStream: null, context: null, source: null, gain: null,
+    analyser: null, merger: null, destination: null, audio: $("monitorAudio"),
+    activeInputId: "", animFrame: 0, hasPermission: false, busy: false,
   };
 
   function readSettings() {
@@ -55,125 +50,71 @@
     const settings = readSettings();
     const preferred = inputs.find(isPreferred);
     const oldChoice = inputSelect.value;
-    const savedId = oldChoice && oldChoice !== MISSING ? oldChoice : settings.inputId;
-    const savedIsPresent = savedId === BROWSER_TAB || inputs.some((device) => device.deviceId === savedId);
+    const hadManualChoice = oldChoice && oldChoice !== MISSING;
+    const savedId = hadManualChoice ? oldChoice : settings.inputId;
+    const savedIsPresent = savedId && inputs.some((device) => device.deviceId === savedId);
     inputSelect.replaceChildren();
+
+    if (!labelsVisible && !state.hasPermission) {
+      inputSelect.append(option(MISSING, `${PREFERRED_LABEL} · 授权后扫描`, true));
+      inputSelect.value = MISSING;
+      inputSelect.disabled = true;
+      paintInputBadge("等待授权");
+      return { preferred: null, labelsVisible: false };
+    }
 
     if (savedId && !savedIsPresent && savedId !== preferred?.deviceId) {
       inputSelect.append(option(savedId, "上次选择的输入设备 · 未连接", true));
     }
     if (!preferred) inputSelect.append(option(MISSING, `${PREFERRED_LABEL} · 未连接`, true));
     for (const [index, device] of inputs.entries()) {
-      const info = state.inputInfo.get(device.deviceId);
-      const channelText = info?.availableChannels ? ` · ${info.availableChannels} ch` : "";
-      const hiddenLabel = labelsVisible || state.hasPermission ? "" : " · 名称需扫描授权";
-      const label = `${device.label.trim() || `音频输入设备 ${index + 1}${hiddenLabel}`}${channelText}`;
+      const label = device.label.trim() || `Audio input ${index + 1}`;
       inputSelect.append(option(device.deviceId, label));
     }
     if (!inputs.length) inputSelect.append(option("__no_input__", "未检测到输入设备", true));
-    if (navigator.mediaDevices?.getDisplayMedia) {
-      inputSelect.append(option(BROWSER_TAB, "浏览器标签页声音 · 启用时选择标签页"));
-    }
 
-    const desired = savedId === BROWSER_TAB ? BROWSER_TAB
-      : savedIsPresent ? savedId : preferred?.deviceId || MISSING;
+    const desired = savedIsPresent ? savedId : preferred?.deviceId || MISSING;
     inputSelect.value = desired;
     if (inputSelect.value !== desired) inputSelect.value = MISSING;
-    inputSelect.disabled = !inputs.length && !navigator.mediaDevices?.getDisplayMedia;
-    if (inputSelect.value === BROWSER_TAB) paintInputBadge("标签页输入");
-    else if (preferred) paintInputBadge("已连接", true);
+    inputSelect.disabled = !inputs.length;
+    if (preferred) paintInputBadge("已连接", true);
     else paintInputBadge("未连接");
-    if (labelsVisible) state.hasPermission = true;
-    return { preferred, labelsVisible };
+    return { preferred, labelsVisible: true };
   }
   function renderOutputs(devices) {
     const outputs = devices.filter((device) => device.kind === "audiooutput" && device.deviceId && device.deviceId !== "default");
     const settings = readSettings();
     const oldChoice = outputSelect.value;
-    const desired = oldChoice || settings.outputId || "";
+    const selected = oldChoice || settings.outputId || "";
     outputSelect.replaceChildren(option("", "系统默认输出设备"));
-    const present = outputs.some((device) => device.deviceId === desired);
-    if (desired && !present) outputSelect.append(option(desired, "上次选择的输出设备 · 未连接", true));
+    const present = outputs.some((device) => device.deviceId === selected);
+    if (selected && !present) outputSelect.append(option(selected, "上次选择的输出设备 · 未连接", true));
     for (const [index, device] of outputs.entries()) {
       outputSelect.append(option(device.deviceId, device.label.trim() || `Audio output ${index + 1}`));
     }
-    outputSelect.value = desired && present ? desired : "";
+    outputSelect.value = selected && !present ? selected : selected;
   }
-  async function scanDevices({ quiet = false, requestPermission = false } = {}) {
+  async function scanDevices({ quiet = false } = {}) {
     if (!navigator.mediaDevices?.enumerateDevices) {
       setStatus("当前浏览器不支持声卡扫描，请使用最新版 Chrome、Edge 或 Safari。", "warn");
       return;
     }
-    if (state.scanning) return;
-    state.scanning = true;
-    $("scanButton").disabled = true;
-    $("startButton").disabled = true;
-    if (!quiet) setStatus("正在扫描声卡与输入通道；不会开始监听。", state.inputStream ? "active" : "idle");
-    let permissionStream;
-    let permissionError;
     try {
-      if (requestPermission && !state.hasPermission && navigator.mediaDevices.getUserMedia) {
-        try {
-          permissionStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: false,
-          });
-          state.hasPermission = true;
-        } catch (error) {
-          permissionError = error;
-        } finally {
-          permissionStream?.getTracks().forEach((track) => track.stop());
-          permissionStream = null;
-        }
-      }
       const devices = await navigator.mediaDevices.enumerateDevices();
       state.devices = devices;
       const inputInfo = renderInputs(devices);
       renderOutputs(devices);
-      if (state.activeInputId && state.activeInputId !== BROWSER_TAB && !devices.some((device) => device.kind === "audioinput" && device.deviceId === state.activeInputId)) {
+      if (state.activeInputId && !devices.some((device) => device.kind === "audioinput" && device.deviceId === state.activeInputId)) {
         await stopMonitoring({ message: `${PREFERRED_LABEL} 已断开，请重新扫描设备。` });
-      }
-      const selectedId = inputSelect.value;
-      if (selectedId === BROWSER_TAB) {
-        renderInputChannelOptions(state.inputInfo.get(BROWSER_TAB)?.actualChannels || 0, BROWSER_TAB);
-      } else if (selectedId && selectedId !== MISSING && selectedId !== "__no_input__" && state.hasPermission) {
-        if (state.activeInputId === selectedId && state.inputStream) {
-          const liveInfo = audioTrackInfo(state.inputStream.getAudioTracks()[0]);
-          const liveChannels = liveInfo.actualChannels || state.inputChannelCount;
-          const info = { ...liveInfo, actualChannels: liveChannels, availableChannels: liveChannels };
-          state.inputInfo.set(selectedId, info);
-          renderInputs(state.devices);
-          renderInputChannelOptions(liveChannels, selectedId);
-        } else {
-          await probeInputChannels(selectedId, { quiet: true });
-        }
-      }
-      if (!quiet) {
-        if (permissionError?.name === "NotAllowedError") {
-          setStatus("麦克风权限未授予；仍可选择浏览器标签页声音，或在浏览器设置中允许麦克风后重扫。", "warn");
-        } else if (!inputInfo.labelsVisible) {
-          setStatus(`扫描到 ${devices.filter((device) => device.kind === "audioinput").length} 个输入设备；浏览器仍隐藏设备名称，请选择设备后读取通道。`, "warn");
-        } else if (state.inputStream) {
-          const activeLabel = state.inputStream.getAudioTracks()[0]?.label || inputSelect.selectedOptions[0]?.textContent || "输入设备";
-          setStatus(`扫描完成 · ${activeLabel} 仍在监听。`, "active");
-        } else if (selectedId === BROWSER_TAB) {
-          setStatus("浏览器标签页声音已选择；启用声卡后选择标签页并允许共享音频。");
-        } else if (selectedId === MISSING || !selectedId) {
-          setStatus(`${PREFERRED_LABEL} 未连接；可选择其他输入，或使用浏览器标签页声音。`, "warn");
-        } else {
-          const info = state.inputInfo.get(inputSelect.value);
-          setStatus(info?.availableChannels
-            ? `${inputSelect.selectedOptions[0]?.textContent} · 已读取通道；启用声卡开始监听。`
-            : `${inputSelect.selectedOptions[0]?.textContent || "所选输入设备"} 已扫描；尚未读取到通道信息，请检查权限后重扫。`, info ? "idle" : "warn");
-        }
+      } else if (!quiet && !inputInfo.labelsVisible) {
+        setStatus("已扫描。浏览器隐藏了声卡名称，请点击「启用声卡」授权并匹配默认输入。", "warn");
+      } else if (!quiet && !inputInfo.preferred) {
+        setStatus(`${PREFERRED_LABEL} 未连接；可在输入列表选择其他设备。`, "warn");
+      } else if (!quiet) {
+        setStatus(`${PREFERRED_LABEL} 已就绪，输入为单声道；输出使用系统默认设备。`);
       }
     } catch (error) {
       setStatus(`扫描失败：${error.message || error}`, "warn");
-    } finally {
-      permissionStream?.getTracks().forEach((track) => track.stop());
-      state.scanning = false;
-      $("scanButton").disabled = false;
-      $("startButton").disabled = state.busy;
     }
   }
   function updateGain() {
@@ -184,59 +125,24 @@
     saveSettings({ volume: percent });
   }
   function updateOutputMode() {
+    if (!state.context || !state.analyser || !state.destination) return;
+    if (state.merger) { state.merger.disconnect(); state.merger = null; }
+    state.analyser.disconnect();
+    const channels = outputMode.value === "stereo" ? 2 : 1;
+    state.destination.channelCount = channels;
+    state.destination.channelCountMode = "explicit";
+    const merger = state.context.createChannelMerger(channels);
+    state.analyser.connect(merger, 0, 0);
+    if (channels === 2) state.analyser.connect(merger, 0, 1);
+    merger.connect(state.destination);
+    state.merger = merger;
     saveSettings({ outputMode: outputMode.value });
-    if (!state.context || !state.destination) return;
-    const requestedChannels = outputMode.value === "stereo" ? 2 : 1;
-    const maximum = state.destination === state.context.destination
-      ? Number(state.destination.maxChannelCount) || 2
-      : 2;
-    const channels = Math.min(requestedChannels, maximum);
-    try {
-      state.destination.channelCount = channels;
-      state.destination.channelCountMode = "explicit";
-      state.destination.channelInterpretation = "speakers";
-    } catch (error) {
-      setStatus(`无法切换输出声道：${error.message || error}`, "warn");
-    }
-  }
-  async function routeOutput(deviceId) {
-    if (!state.context || !state.analyser) return;
-    try { state.analyser.disconnect(); } catch { /* No output edge yet. */ }
-    state.audio.pause();
-    state.audio.srcObject = null;
-    state.outputStreamDestination?.stream.getTracks().forEach((track) => track.stop());
-    state.outputStreamDestination = null;
-
-    if (typeof state.context.setSinkId === "function") {
-      await state.context.setSinkId(deviceId || "");
-      state.destination = state.context.destination;
-      updateOutputMode();
-      state.analyser.connect(state.destination);
-      return;
-    }
-    if (!deviceId) {
-      state.destination = state.context.destination;
-      updateOutputMode();
-      state.analyser.connect(state.destination);
-      return;
-    }
-    if (typeof state.audio.setSinkId !== "function") {
-      throw new Error("此浏览器不支持选择非默认输出设备，请切回系统默认输出。");
-    }
-    const streamDestination = state.context.createMediaStreamDestination();
-    state.outputStreamDestination = streamDestination;
-    state.destination = streamDestination;
-    updateOutputMode();
-    state.audio.srcObject = streamDestination.stream;
-    await state.audio.setSinkId(deviceId);
-    state.analyser.connect(streamDestination);
-    await state.audio.play();
   }
   async function setOutputDevice(deviceId) {
     saveSettings({ outputId: deviceId });
-    if (!state.context || !state.analyser) return;
+    if (!state.audio.srcObject || typeof state.audio.setSinkId !== "function") return;
     try {
-      await routeOutput(deviceId);
+      await state.audio.setSinkId(deviceId);
       setStatus(deviceId ? "输出设备已切换。" : "正在使用系统默认输出设备。", state.inputStream ? "active" : "idle");
     } catch (error) {
       setStatus(`无法切换输出设备：${error.message || error}`, "warn");
@@ -278,262 +184,61 @@
     };
     draw();
   }
-  function channelRangeMaximum(value) {
-    if (Number.isFinite(value)) return Number(value);
-    if (value && Number.isFinite(value.max)) return Number(value.max);
-    if (value && Number.isFinite(value.min)) return Number(value.min);
-    return 0;
-  }
-  function audioTrackInfo(track) {
-    const settings = track?.getSettings?.() || {};
-    const capabilities = track?.getCapabilities?.() || {};
-    const actualChannels = Number(settings.channelCount) || 0;
-    const maxChannels = channelRangeMaximum(capabilities.channelCount);
-    return {
-      actualChannels,
-      maxChannels,
-      availableChannels: Math.min(32, actualChannels),
-      sampleRate: Number(settings.sampleRate) || 0,
-    };
-  }
-  async function readInputTrackInfo(track) {
-    const info = audioTrackInfo(track);
-    const supportsChannelCount = navigator.mediaDevices?.getSupportedConstraints?.()?.channelCount;
-    const targetChannels = Math.min(32, info.maxChannels);
-    if (!targetChannels || !supportsChannelCount || !track?.applyConstraints || info.actualChannels === targetChannels) {
-      return info;
-    }
-    try {
-      await track.applyConstraints({ channelCount: { exact: targetChannels } });
-      const updated = audioTrackInfo(track);
-      if (updated.actualChannels) return updated;
-      return {
-        ...updated,
-        actualChannels: targetChannels,
-        availableChannels: targetChannels,
-        exactChannelConstraint: true,
-      };
-    } catch {
-      return info;
-    }
-  }
-  function renderInputChannelOptions(channelCount, deviceId) {
-    const count = Math.max(0, Math.min(32, Number(channelCount) || 0));
-    const previous = inputChannelSelect.dataset.deviceId === deviceId ? inputChannelSelect.value : "";
-    const storedRoutes = readSettings().inputRoutes || {};
-    inputChannelSelect.replaceChildren();
-    if (!count) {
-      const label = deviceId === BROWSER_TAB
-        ? "启用后读取标签页通道"
-        : "扫描后读取设备通道";
-      inputChannelSelect.append(option("", label, true));
-      inputChannelSelect.disabled = true;
-      inputChannelSelect.dataset.deviceId = deviceId || "";
-      return;
-    }
-    for (let channel = 0; channel < count; channel += 1) {
-      inputChannelSelect.append(option("mono:" + channel, "单声道 · CH " + (channel + 1)));
-    }
-    for (let first = 0; first + 1 < count; first += 1) {
-      inputChannelSelect.append(option("stereo:" + first, "立体声 · CH " + (first + 1) + "-" + (first + 2)));
-    }
-    const saved = previous || storedRoutes[deviceId] || "";
-    const valid = Array.from(inputChannelSelect.options).some((item) => item.value === saved);
-    inputChannelSelect.value = valid ? saved : count >= 2 ? "stereo:0" : "mono:0";
-    inputChannelSelect.disabled = false;
-    inputChannelSelect.dataset.deviceId = deviceId || "";
-  }
-  async function probeInputChannels(deviceId, { quiet = false } = {}) {
-    if (!deviceId || deviceId === MISSING || deviceId === BROWSER_TAB || !state.hasPermission) return null;
-    if (state.activeInputId === deviceId && state.inputStream) {
-      const info = audioTrackInfo(state.inputStream.getAudioTracks()[0]);
-      state.inputInfo.set(deviceId, info);
-      renderInputs(state.devices);
-      renderInputChannelOptions(info.availableChannels, deviceId);
-      return info;
-    }
-    const token = ++state.probeToken;
-    let stream;
-    try {
-      stream = await getPhysicalInputStream(deviceId, 0);
-      const info = await readInputTrackInfo(stream.getAudioTracks()[0]);
-      if (token !== state.probeToken) return null;
-      state.inputInfo.set(deviceId, info);
-      renderInputs(state.devices);
-      inputSelect.value = deviceId;
-      renderInputChannelOptions(info.availableChannels, deviceId);
-      if (!quiet) {
-        setStatus(info.availableChannels
-          ? inputSelect.selectedOptions[0].textContent + " · 已读取 " + info.availableChannels + " 个可用通道。"
-          : "浏览器没有报告该设备的输入通道数。", info.availableChannels ? "idle" : "warn");
-      }
-      return info;
-    } catch (error) {
-      if (token === state.probeToken) {
-        state.inputInfo.delete(deviceId);
-        renderInputChannelOptions(0, deviceId);
-        if (!quiet) setStatus("读取输入通道失败：" + (error.message || error), "warn");
-      }
-      return null;
-    } finally {
-      stream?.getTracks().forEach((track) => track.stop());
-    }
-  }
-  async function getPhysicalInputStream(deviceId, requestedChannels = null) {
-    const base = { deviceId: { exact: deviceId } };
-    const tuned = {
-      ...base,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    };
-    const attempts = [];
-    if (requestedChannels) {
-      attempts.push({ ...tuned, channelCount: { exact: requestedChannels } });
-      attempts.push({ ...base, channelCount: { ideal: requestedChannels } });
-    } else {
-      attempts.push({ ...tuned, channelCount: { ideal: 32 } });
-      attempts.push({ ...base, channelCount: { ideal: 32 } });
-    }
-    attempts.push(base);
-    let lastError;
-    for (const audio of attempts) {
-      try {
-        return await navigator.mediaDevices.getUserMedia({ audio, video: false });
-      } catch (error) {
-        lastError = error;
-        if (error.name !== "OverconstrainedError" && error.name !== "TypeError") throw error;
-      }
-    }
-    throw lastError || new Error("无法打开所选输入设备。");
-  }
-  async function getBrowserTabAudioStream() {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      throw new Error("当前浏览器不支持浏览器标签页声音捕获。");
-    }
-    const audio = {
-      channelCount: { ideal: 32 },
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    };
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "browser" },
-        audio,
-        selfBrowserSurface: "exclude",
-        systemAudio: "exclude",
-        monitorTypeSurfaces: "exclude",
-        preferCurrentTab: false,
-      });
-    } catch (error) {
-      if (error?.name !== "TypeError") throw error;
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio });
-    }
-    const videoTrack = stream.getVideoTracks()[0];
-    const surface = videoTrack?.getSettings?.().displaySurface;
-    if (surface && surface !== "browser") {
-      stream.getTracks().forEach((track) => track.stop());
-      throw new Error("请在浏览器分享窗口中选择“浏览器标签页”。");
-    }
-    if (!stream.getAudioTracks().length) {
-      stream.getTracks().forEach((track) => track.stop());
-      throw new Error("所选标签页没有共享声音；请在浏览器分享窗口中勾选标签页音频。");
-    }
-    videoTrack?.stop();
-    return stream;
-  }
-  function applyInputRoute() {
-    if (!state.inputSplitter || !state.routeMerger || !state.gain) return;
-    const pieces = String(inputChannelSelect.value || "").split(":");
-    const mode = pieces[0];
-    const first = Number(pieces[1]);
-    if (!Number.isInteger(first) || first < 0) throw new Error("请先扫描并选择可用输入通道。");
-    const required = mode === "stereo" ? first + 2 : first + 1;
-    if (required > state.inputChannelCount) {
-      throw new Error("当前输入流通道数不足，无法读取所选通道。");
-    }
-    if (mode !== "stereo" && mode !== "mono") throw new Error("未知的输入通道模式。");
-    state.inputSplitter.disconnect();
-    state.routeMerger?.disconnect();
-    state.routeMerger = state.context.createChannelMerger(mode === "stereo" ? 2 : 1);
-    state.routeMerger.channelInterpretation = "discrete";
-    if (mode === "stereo") {
-      state.inputSplitter.connect(state.routeMerger, first, 0);
-      state.inputSplitter.connect(state.routeMerger, first + 1, 1);
-    } else {
-      state.inputSplitter.connect(state.routeMerger, first, 0);
-    }
-    state.routeMerger.connect(state.gain);
-    state.inputRouteMode = mode;
-    state.inputRouteStart = first;
-    const settings = readSettings();
-    const routes = { ...(settings.inputRoutes || {}), [state.activeInputId]: inputChannelSelect.value };
-    saveSettings({ inputRoutes: routes });
-  }
-  async function connectInput(deviceId, browserTabStream = null) {
+  async function connectInput(deviceId) {
     if (!deviceId || deviceId === MISSING || deviceId === "__no_input__") {
-      throw new Error("请先扫描设备并选择一个输入，或选择浏览器标签页声音。");
+      throw new Error(`${PREFERRED_LABEL} 未连接。请选择一个已连接的输入设备。`);
     }
     if (state.inputStream) {
       state.inputStream.getTracks().forEach((track) => track.stop());
       state.inputStream = null;
     }
-    cleanupGraph();
-    const stream = deviceId === BROWSER_TAB
-      ? await (browserTabStream || getBrowserTabAudioStream())
-      : await getPhysicalInputStream(deviceId, state.inputInfo.get(deviceId)?.actualChannels || null);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: deviceId },
+        channelCount: { exact: 1 },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      video: false,
+    });
     state.inputStream = stream;
     state.activeInputId = deviceId;
     const track = stream.getAudioTracks()[0];
-    if (!track) throw new Error("输入流没有可用的音轨。");
     track.addEventListener("ended", () => {
       if (state.inputStream === stream) stopMonitoring({ message: "输入设备已断开。" });
     }, { once: true });
-    if (deviceId !== BROWSER_TAB) state.hasPermission = true;
-    const info = await readInputTrackInfo(track);
-    const actualChannels = info.actualChannels;
-    if (!actualChannels) throw new Error("浏览器没有报告扫描后的实际输入通道数；为避免把单声道误配成多声道，暂不启用。");
-    state.inputChannelCount = actualChannels;
-    state.inputInfo.set(deviceId, { ...info, actualChannels, availableChannels: actualChannels });
-    renderInputs(state.devices);
-    inputSelect.value = deviceId;
-    renderInputChannelOptions(actualChannels, deviceId);
     state.source = state.context.createMediaStreamSource(stream);
-    state.inputSplitter = state.context.createChannelSplitter(actualChannels);
-    state.inputSplitter.channelInterpretation = "discrete";
     state.gain = state.context.createGain();
     state.gain.gain.value = Number(volumeSlider.value) / 100;
     state.analyser = state.context.createAnalyser();
     state.analyser.fftSize = 512;
-    state.source.connect(state.inputSplitter);
-    applyInputRoute();
+    state.destination = state.context.createMediaStreamDestination();
+    state.source.connect(state.gain);
     state.gain.connect(state.analyser);
+    updateOutputMode();
+    state.audio.srcObject = state.destination.stream;
     const selectedOutput = outputSelect.value;
-    await routeOutput(selectedOutput);
+    if (typeof state.audio.setSinkId === "function") await state.audio.setSinkId(selectedOutput);
+    else if (selectedOutput) throw new Error("此浏览器不支持选择输出设备，请使用系统默认输出或更新浏览器。");
+    await state.audio.play();
     const settings = track.getSettings();
     const rate = settings.sampleRate ? ` · ${settings.sampleRate} Hz` : "";
-    const routeText = inputChannelSelect.selectedOptions[0]?.textContent || (actualChannels + " ch");
     $("startLabel").textContent = "停止监听";
     $("startButton").classList.add("running");
-    $("permissionNote").textContent = "监听已启用 · " + routeText + rate + " · 音频仅在本机处理";
+    $("permissionNote").textContent = `监听已启用 · MONO${rate} · 音频仅在本机处理`;
     paintInputBadge("监听中", true);
-    const sourceLabel = track.label || (deviceId === BROWSER_TAB ? "浏览器标签页声音" : PREFERRED_LABEL);
-    setStatus(sourceLabel + " · " + routeText + " 正在监听。", "active");
+    setStatus(`${track.label || PREFERRED_LABEL} 正在单声道监听。`, "active");
     animateMeter();
   }
   function cleanupGraph() {
     cancelAnimationFrame(state.animFrame);
     state.animFrame = 0;
-    for (const node of [state.source, state.inputSplitter, state.routeMerger, state.gain, state.analyser, state.destination]) {
+    for (const node of [state.source, state.gain, state.analyser, state.merger]) {
       try { node?.disconnect(); } catch { /* Already disconnected. */ }
     }
-    state.outputStreamDestination?.stream.getTracks().forEach((track) => track.stop());
-    state.outputStreamDestination = null;
-    state.source = state.inputSplitter = state.routeMerger = state.gain = state.analyser = state.destination = null;
+    state.source = state.gain = state.analyser = state.merger = state.destination = null;
     state.activeInputId = "";
-    state.inputChannelCount = 0;
     state.audio.pause();
     state.audio.srcObject = null;
     $("meterLeft").style.height = "0";
@@ -550,101 +255,67 @@
     }
     $("startLabel").textContent = "启用声卡";
     $("startButton").classList.remove("running");
-    $("permissionNote").textContent = "先扫描读取设备与通道；启用声卡后才会开始输出。";
-    paintInputBadge(inputSelect.value === BROWSER_TAB ? "标签页输入" : "等待启用");
+    $("permissionNote").textContent = "点击启用以授权麦克风并开始监听。音频处理在浏览器本地完成。";
+    paintInputBadge("等待启用");
     setStatus(message, "idle");
   }
   async function startMonitoring() {
     if (state.busy) return;
     if (state.inputStream) { await stopMonitoring(); return; }
-    if (state.scanning) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("请通过 HTTPS 打开页面，并允许浏览器使用麦克风。", "warn");
+      return;
+    }
     if (!window.isSecureContext) {
-      setStatus("音频输入需要 HTTPS 安全连接。", "warn");
-      return;
-    }
-    const deviceId = inputSelect.value;
-    const browserTab = deviceId === BROWSER_TAB;
-    if (browserTab && !navigator.mediaDevices?.getDisplayMedia) {
-      setStatus("当前浏览器不支持标签页声音捕获。", "warn");
-      return;
-    }
-    if (!browserTab && !navigator.mediaDevices?.getUserMedia) {
-      setStatus("当前浏览器不支持音频输入。", "warn");
-      return;
-    }
-    if (!deviceId || deviceId === MISSING || deviceId === "__no_input__") {
-      setStatus("请先点击「扫描声卡」并选择一个输入设备。", "warn");
+      setStatus("麦克风需要 HTTPS 安全连接。", "warn");
       return;
     }
     state.busy = true;
-    let pendingBrowserTabStream = null;
     $("startButton").disabled = true;
+    $("scanButton").disabled = true;
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) throw new Error("当前浏览器不支持 Web Audio。");
       state.context = new AudioContextClass({ latencyHint: "interactive" });
-      pendingBrowserTabStream = browserTab ? getBrowserTabAudioStream() : null;
       await state.context.resume();
-      saveSettings({ inputId: deviceId });
-      await connectInput(deviceId, pendingBrowserTabStream);
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      permissionStream.getTracks().forEach((track) => track.stop());
+      state.hasPermission = true;
+      await scanDevices({ quiet: true });
+      const preferred = state.devices.find((device) => device.kind === "audioinput" && isPreferred(device));
+      const currentSelection = inputSelect.value;
+      const selectedIsUsable = state.devices.some((device) => device.kind === "audioinput" && device.deviceId === currentSelection);
+      if (preferred && !readSettings().inputId) inputSelect.value = preferred.deviceId;
+      const selectedId = selectedIsUsable ? currentSelection : preferred?.deviceId || currentSelection;
+      if (!preferred && (selectedId === MISSING || !state.devices.some((device) => device.kind === "audioinput" && device.deviceId === selectedId))) {
+        throw new Error(`${PREFERRED_LABEL} 未连接。连接后重新扫描，或选择其他已连接输入。`);
+      }
+      inputSelect.value = selectedId;
+      saveSettings({ inputId: selectedId });
+      await connectInput(selectedId);
     } catch (error) {
-      pendingBrowserTabStream?.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => {});
-      const message = error.name === "NotAllowedError"
-        ? "浏览器未允许音频捕获；请允许麦克风或标签页音频后重试。"
-        : "无法启用声卡：" + (error.message || error);
-      await stopMonitoring({ message });
+      await stopMonitoring({ message: error.name === "NotAllowedError" ? "麦克风权限未授予。请在浏览器地址栏允许麦克风后重试。" : `无法启用声卡：${error.message || error}` });
+      await scanDevices({ quiet: true });
     } finally {
       state.busy = false;
-      $("startButton").disabled = state.scanning;
+      $("startButton").disabled = false;
+      $("scanButton").disabled = false;
     }
   }
   inputSelect.addEventListener("change", async () => {
     saveSettings({ inputId: inputSelect.value });
-    const deviceId = inputSelect.value;
-    if (deviceId === BROWSER_TAB) {
-      renderInputChannelOptions(state.inputInfo.get(BROWSER_TAB)?.actualChannels || 0, BROWSER_TAB);
-      if (!state.inputStream) {
-        paintInputBadge("标签页输入");
-        setStatus("点击「启用声卡」后，在浏览器分享窗口中选择标签页并允许共享音频。");
-        return;
-      }
-    } else if (!state.hasPermission && !state.inputStream) {
-      renderInputChannelOptions(0, deviceId);
-      setStatus("点击「扫描声卡」读取所选设备的通道信息。", "warn");
-      return;
-    }
-    if (deviceId && deviceId !== MISSING && deviceId !== "__no_input__" && state.inputStream) {
-      state.busy = true;
-      $("startButton").disabled = true;
-      try { await connectInput(deviceId); }
-      catch (error) { await stopMonitoring({ message: "输入切换失败：" + (error.message || error) }); }
-      finally { state.busy = false; $("startButton").disabled = state.scanning; }
-    } else if (deviceId && deviceId !== BROWSER_TAB && deviceId !== MISSING && deviceId !== "__no_input__") {
-      await probeInputChannels(deviceId);
-    }
-  });
-  inputChannelSelect.addEventListener("change", () => {
-    const settings = readSettings();
-    const routes = { ...(settings.inputRoutes || {}), [inputSelect.value]: inputChannelSelect.value };
-    saveSettings({ inputRoutes: routes });
-    if (state.inputStream && state.activeInputId === inputSelect.value) {
-      try {
-        applyInputRoute();
-        const name = inputChannelSelect.selectedOptions[0]?.textContent || "输入通道";
-        $("permissionNote").textContent = "监听已启用 · " + name + " · 音频仅在本机处理";
-        setStatus(name + " 正在监听。", "active");
-      } catch (error) {
-        setStatus("无法切换输入通道：" + (error.message || error), "warn");
-      }
-    } else {
-      setStatus((inputChannelSelect.selectedOptions[0]?.textContent || "输入通道") + " 已选择；启用声卡开始监听。");
+    if (state.inputStream) {
+      state.busy = true; $("startButton").disabled = true;
+      try { await connectInput(inputSelect.value); }
+      catch (error) { await stopMonitoring({ message: `输入切换失败：${error.message || error}` }); }
+      finally { state.busy = false; $("startButton").disabled = false; }
     }
   });
   outputSelect.addEventListener("change", () => setOutputDevice(outputSelect.value));
   $("chooseOutputButton").addEventListener("click", chooseOutputDevice);
   outputMode.addEventListener("change", updateOutputMode);
   volumeSlider.addEventListener("input", updateGain);
-  $("scanButton").addEventListener("click", () => scanDevices({ requestPermission: true }));
+  $("scanButton").addEventListener("click", () => scanDevices());
   $("startButton").addEventListener("click", startMonitoring);
   navigator.mediaDevices?.addEventListener?.("devicechange", () => scanDevices({ quiet: true }));
 
@@ -652,5 +323,5 @@
   if (Number.isFinite(settings.volume)) volumeSlider.value = String(Math.max(0, Math.min(300, settings.volume)));
   if (settings.outputMode === "mono" || settings.outputMode === "stereo") outputMode.value = settings.outputMode;
   updateGain();
-  scanDevices({ quiet: true });
+  scanDevices();
 })();
