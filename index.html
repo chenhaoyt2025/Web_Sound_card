@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101112" />
+  <meta name="description" content="GOHO Web Sound Card — a minimal mono input and stereo monitor." />
+  <title>GOHO Web Sound Card</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="GOHO Web Sound Card home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="brand-name">GOHO <span>WEB</span></span>
+      </a>
+      <div class="top-meta"><span class="live-dot" id="liveDot"></span><span id="topState">READY</span><span class="meta-divider"></span><span>SOUND CARD</span></div>
+    </header>
+
+    <section class="intro" aria-labelledby="pageTitle">
+      <div>
+        <p class="eyebrow">A QUIET ROUTE FOR YOUR SOUND</p>
+        <h1 id="pageTitle">GOHO Web <span>Sound Card</span></h1>
+        <p class="lede">单声道输入 · 立体声监听 · 简洁直达</p>
+      </div>
+      <button class="scan-button" id="scanButton" type="button">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 8a6.5 6.5 0 0 0-11.8-2L3.5 8M3.5 4.5V8H7M3.5 12a6.5 6.5 0 0 0 11.8 2l1.2-2M16.5 15.5V12H13"/></svg>
+        <span>扫描声卡</span>
+      </button>
+    </section>
+
+    <section class="workspace" aria-label="音频设备设置">
+      <div class="routing-column">
+        <article class="panel device-panel">
+          <div class="panel-heading">
+            <div class="section-index">01 <span>INPUT</span></div>
+            <div class="connection-state" id="inputBadge"><span class="badge-dot"></span><span>等待扫描</span></div>
+          </div>
+          <label class="field-label" for="inputDevice">输入设备</label>
+          <div class="select-wrap">
+            <select id="inputDevice" aria-label="输入声卡">
+              <option value="__preferred_missing__" disabled selected>203 System Cardenza · 等待扫描</option>
+            </select>
+            <span class="select-chevron" aria-hidden="true"></span>
+          </div>
+          <div class="field-foot"><span>输入模式</span><strong><span class="mono-glyph">M</span> MONO · CHANNEL 1</strong></div>
+          <div class="panel-rule"></div>
+          <div class="device-caption"><span class="caption-icon input-icon" aria-hidden="true">↘</span><span>默认声卡 <b>203 System Cardenza</b></span></div>
+        </article>
+
+        <article class="panel device-panel output-panel">
+          <div class="panel-heading">
+            <div class="section-index">02 <span>OUTPUT</span></div>
+            <div class="connection-state connected"><span class="badge-dot"></span><span>系统默认</span></div>
+          </div>
+          <label class="field-label" for="outputDevice">输出设备</label>
+          <div class="select-wrap">
+            <select id="outputDevice" aria-label="输出声卡"><option value="">系统默认输出设备</option></select>
+            <span class="select-chevron" aria-hidden="true"></span>
+          </div>
+          <div class="field-foot output-fields">
+            <label for="outputMode">输出声道</label>
+            <div class="select-wrap compact-select">
+              <select id="outputMode" aria-label="输出声道"><option value="stereo" selected>立体声 · Stereo</option><option value="mono">单声道 · Mono</option></select>
+              <span class="select-chevron" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="panel-rule"></div>
+          <div class="device-caption"><span class="caption-icon output-icon" aria-hidden="true">↗</span><span>可切换其他可用输出设备</span></div>
+        </article>
+      </div>
+
+      <article class="panel monitor-panel">
+        <div class="panel-heading">
+          <div class="section-index">03 <span>MONITOR</span></div>
+          <span class="monitor-label">PRE SYSTEM VOLUME</span>
+        </div>
+        <div class="monitor-center">
+          <div class="meter" aria-label="输入电平">
+            <div class="meter-track"><span id="meterLeft"></span></div>
+            <div class="meter-track"><span id="meterRight"></span></div>
+          </div>
+          <div class="volume-readout"><output id="volumeValue">100</output><span>%</span></div>
+          <p class="volume-caption">输入增益 <span>INPUT GAIN</span></p>
+        </div>
+        <div class="volume-control">
+          <span class="scale-label">0%</span>
+          <input id="volumeSlider" type="range" min="0" max="300" step="1" value="100" aria-label="输入音量增益，最高 300%" />
+          <span class="scale-label">300%</span>
+        </div>
+        <div class="gain-foot"><span>系统音量之前</span><span>MAX <b>300%</b></span></div>
+        <button class="start-button" id="startButton" type="button"><span class="play-icon" aria-hidden="true"></span><span id="startLabel">启用声卡</span></button>
+        <p class="permission-note" id="permissionNote">点击启用以授权麦克风并开始监听。音频处理在浏览器本地完成。</p>
+      </article>
+    </section>
+
+    <footer class="statusbar">
+      <div class="status-copy"><span class="status-light" id="statusLight"></span><span id="statusText" role="status" aria-live="polite">正在扫描可用声卡…</span></div>
+      <span class="status-right">LOCAL AUDIO · NO UPLOAD</span>
+    </footer>
+    <div class="footnote">设备名称由浏览器权限控制。连接声卡后点击「启用声卡」，即可识别默认输入。</div>
+  </main>
+  <audio id="monitorAudio" autoplay playsinline></audio>
+</body>
+</html>
