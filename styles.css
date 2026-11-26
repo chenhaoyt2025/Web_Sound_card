@@ -130,3 +130,6 @@ h1 { font-size: clamp(27px, 3.5vw, 36px); }
 
 .brand-mark { width: 29px; height: 29px; display: grid; place-items: center; border: 0; border-radius: 0; background: transparent; transform: none; }
 .brand-mark img { display: block; width: 29px; height: 29px; object-fit: contain; }
+
+.input-channel-foot label { color: #777e7a; font-size: 9px; }
+.input-channel-select { width: min(190px, 76%); }

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#101112" />
-  <meta name="description" content="GOHO Web Sound Card — a minimal mono input and stereo monitor." />
+  <meta name="description" content="GOHO Web Sound Card — compact multichannel input selection and stereo monitoring." />
   <title>GOHO Web Sound Card</title>
   <link rel="stylesheet" href="./styles.css" />
   <script src="./app.js" defer></script>
@@ -23,7 +23,7 @@
       <div>
         <p class="eyebrow">A QUIET ROUTE FOR YOUR SOUND</p>
         <h1 id="pageTitle">GOHO Web <span>Sound Card</span></h1>
-        <p class="lede">单声道输入 · 立体声监听 · 简洁直达</p>
+        <p class="lede">多通道输入 · 立体声监听 · 简洁直达</p>
       </div>
       <button class="scan-button" id="scanButton" type="button">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 8a6.5 6.5 0 0 0-11.8-2L3.5 8M3.5 4.5V8H7M3.5 12a6.5 6.5 0 0 0 11.8 2l1.2-2M16.5 15.5V12H13"/></svg>
@@ -53,7 +53,7 @@
             <div class="meter-track"><span id="meterRight"></span></div>
           </div>
         </div>
-        <p class="permission-note" id="permissionNote">点击启用以授权麦克风并开始监听。音频处理在浏览器本地完成。</p>
+        <p class="permission-note" id="permissionNote">扫描会读取设备与通道，但不会开始监听；启用声卡后才会输出声音。</p>
       </article>
 
       <div class="routing-column">
@@ -66,10 +66,17 @@
           <div class="select-wrap">
             <select id="inputDevice" aria-label="输入声卡">
               <option value="__preferred_missing__" disabled selected>203 System Cardenza · 等待扫描</option>
+              <option value="__browser_tab_audio__">浏览器标签页声音 · 启用时选择</option>
             </select>
             <span class="select-chevron" aria-hidden="true"></span>
           </div>
-          <div class="field-foot"><span>输入模式</span><strong><span class="mono-glyph">M</span> MONO · CHANNEL 1</strong></div>
+          <div class="field-foot input-channel-foot">
+            <label for="inputChannel">输入通道</label>
+            <div class="select-wrap compact-select input-channel-select">
+              <select id="inputChannel" aria-label="输入声道与通道" disabled><option value="">扫描后读取通道</option></select>
+              <span class="select-chevron" aria-hidden="true"></span>
+            </div>
+          </div>
           <div class="panel-rule"></div>
           <div class="device-caption"><span class="caption-icon input-icon" aria-hidden="true">↘</span><span>默认声卡 <b>203 System Cardenza</b></span></div>
         </article>
@@ -102,7 +109,7 @@
       <div class="status-copy"><span class="status-light" id="statusLight"></span><span id="statusText" role="status" aria-live="polite">正在扫描可用声卡…</span></div>
       <span class="status-right">LOCAL AUDIO · NO UPLOAD</span>
     </footer>
-    <div class="footnote">设备名称由浏览器权限控制。连接声卡后点击「启用声卡」，即可识别默认输入。</div>
+    <div class="footnote">「扫描声卡」会读取设备与可用通道，不会开始监听；「启用声卡」才会输出声音。标签页音频需在浏览器分享窗口中选择标签并允许共享音频。</div>
   </main>
   <audio id="monitorAudio" autoplay playsinline></audio>
 </body>
