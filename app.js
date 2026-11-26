@@ -156,10 +156,11 @@
     try {
       const selected = await navigator.mediaDevices.selectAudioOutput();
       if (selected?.deviceId) {
+        const outputId = selected.deviceId === "default" ? "" : selected.deviceId;
         state.devices = [...state.devices.filter((device) => device.deviceId !== selected.deviceId), selected];
         renderOutputs(state.devices);
-        outputSelect.value = selected.deviceId;
-        await setOutputDevice(selected.deviceId);
+        outputSelect.value = outputId;
+        await setOutputDevice(outputId);
         if (!state.inputStream) setStatus(`${selected.label || "输出设备"} 已选择。启用声卡后开始监听。`);
       }
     } catch (error) {
