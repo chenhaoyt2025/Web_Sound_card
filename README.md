@@ -7,6 +7,7 @@ A small, browser-based sound-card monitor for GOHO Web.
 - Optional output mode: mono.
 - Input gain: 0–300%, applied in the Web Audio graph before the operating system output volume.
 - Device scanning and selection for available audio inputs and outputs.
+- A browser audio-output picker for devices hidden until the user grants speaker access.
 - Audio stays in the browser; the app does not upload microphone audio.
 
 ## Run

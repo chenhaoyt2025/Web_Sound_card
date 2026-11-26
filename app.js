@@ -129,6 +129,8 @@
     if (state.merger) { state.merger.disconnect(); state.merger = null; }
     state.analyser.disconnect();
     const channels = outputMode.value === "stereo" ? 2 : 1;
+    state.destination.channelCount = channels;
+    state.destination.channelCountMode = "explicit";
     const merger = state.context.createChannelMerger(channels);
     state.analyser.connect(merger, 0, 0);
     if (channels === 2) state.analyser.connect(merger, 0, 1);
@@ -144,6 +146,24 @@
       setStatus(deviceId ? "输出设备已切换。" : "正在使用系统默认输出设备。", state.inputStream ? "active" : "idle");
     } catch (error) {
       setStatus(`无法切换输出设备：${error.message || error}`, "warn");
+    }
+  }
+  async function chooseOutputDevice() {
+    if (typeof navigator.mediaDevices?.selectAudioOutput !== "function") {
+      setStatus("此浏览器不支持输出设备授权选择；可从已列出的设备中切换。", "warn");
+      return;
+    }
+    try {
+      const selected = await navigator.mediaDevices.selectAudioOutput();
+      if (selected?.deviceId) {
+        state.devices = [...state.devices.filter((device) => device.deviceId !== selected.deviceId), selected];
+        renderOutputs(state.devices);
+        outputSelect.value = selected.deviceId;
+        await setOutputDevice(selected.deviceId);
+        if (!state.inputStream) setStatus(`${selected.label || "输出设备"} 已选择。启用声卡后开始监听。`);
+      }
+    } catch (error) {
+      if (error.name !== "NotAllowedError") setStatus(`无法选择输出设备：${error.message || error}`, "warn");
     }
   }
   function animateMeter() {
@@ -291,6 +311,7 @@
     }
   });
   outputSelect.addEventListener("change", () => setOutputDevice(outputSelect.value));
+  $("chooseOutputButton").addEventListener("click", chooseOutputDevice);
   outputMode.addEventListener("change", updateOutputMode);
   volumeSlider.addEventListener("input", updateGain);
   $("scanButton").addEventListener("click", () => scanDevices());
