@@ -32,10 +32,34 @@
     </section>
 
     <section class="workspace" aria-label="音频设备设置">
+      <article class="panel monitor-panel">
+        <div class="panel-heading">
+          <div class="section-index">01 <span>GAIN</span></div>
+          <span class="monitor-label">INPUT GAIN · PRE SYSTEM VOLUME</span>
+        </div>
+        <div class="monitor-control-row">
+          <button class="start-button" id="startButton" type="button"><span class="play-icon" aria-hidden="true"></span><span id="startLabel">启用声卡</span></button>
+          <div class="gain-control">
+            <div class="gain-readout"><span>输入增益</span><div class="volume-readout"><output id="volumeValue">100</output><span>%</span></div></div>
+            <div class="volume-control">
+              <span class="scale-label">0%</span>
+              <input id="volumeSlider" type="range" min="0" max="300" step="1" value="100" aria-label="输入音量增益，最高 300%" />
+              <span class="scale-label">300%</span>
+            </div>
+            <div class="gain-foot"><span>系统总音量之前</span><span>MAX <b>300%</b></span></div>
+          </div>
+          <div class="meter meter-compact" aria-label="输入电平">
+            <div class="meter-track"><span id="meterLeft"></span></div>
+            <div class="meter-track"><span id="meterRight"></span></div>
+          </div>
+        </div>
+        <p class="permission-note" id="permissionNote">点击启用以授权麦克风并开始监听。音频处理在浏览器本地完成。</p>
+      </article>
+
       <div class="routing-column">
         <article class="panel device-panel">
           <div class="panel-heading">
-            <div class="section-index">01 <span>INPUT</span></div>
+            <div class="section-index">02 <span>INPUT</span></div>
             <div class="connection-state" id="inputBadge"><span class="badge-dot"></span><span>等待扫描</span></div>
           </div>
           <label class="field-label" for="inputDevice">输入设备</label>
@@ -52,7 +76,7 @@
 
         <article class="panel device-panel output-panel">
           <div class="panel-heading">
-            <div class="section-index">02 <span>OUTPUT</span></div>
+            <div class="section-index">03 <span>OUTPUT</span></div>
             <div class="connection-state connected"><span class="badge-dot"></span><span>系统默认</span></div>
           </div>
           <label class="field-label" for="outputDevice">输出设备</label>
@@ -72,28 +96,6 @@
         </article>
       </div>
 
-      <article class="panel monitor-panel">
-        <div class="panel-heading">
-          <div class="section-index">03 <span>MONITOR</span></div>
-          <span class="monitor-label">PRE SYSTEM VOLUME</span>
-        </div>
-        <div class="monitor-center">
-          <div class="meter" aria-label="输入电平">
-            <div class="meter-track"><span id="meterLeft"></span></div>
-            <div class="meter-track"><span id="meterRight"></span></div>
-          </div>
-          <div class="volume-readout"><output id="volumeValue">100</output><span>%</span></div>
-          <p class="volume-caption">输入增益 <span>INPUT GAIN</span></p>
-        </div>
-        <div class="volume-control">
-          <span class="scale-label">0%</span>
-          <input id="volumeSlider" type="range" min="0" max="300" step="1" value="100" aria-label="输入音量增益，最高 300%" />
-          <span class="scale-label">300%</span>
-        </div>
-        <div class="gain-foot"><span>系统音量之前</span><span>MAX <b>300%</b></span></div>
-        <button class="start-button" id="startButton" type="button"><span class="play-icon" aria-hidden="true"></span><span id="startLabel">启用声卡</span></button>
-        <p class="permission-note" id="permissionNote">点击启用以授权麦克风并开始监听。音频处理在浏览器本地完成。</p>
-      </article>
     </section>
 
     <footer class="statusbar">

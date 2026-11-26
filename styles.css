@@ -55,3 +55,75 @@ h1 span { color: #aab0ad; font-weight: 350; }
 .permission-note { min-height: 25px; margin: 10px 0 0; color: #7f8782; font-size: 9px; line-height: 1.5; text-align: center; }.statusbar { margin-top: 16px; min-height: 44px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; gap: 15px; border: 1px solid #292e2c; border-radius: 8px; background: #151817; }.status-copy { display: flex; align-items: center; gap: 8px; color: #929a95; font-size: 10px; }.status-right { color: #69716c; font-size: 8px; letter-spacing: .12em; white-space: nowrap; }.footnote { color: #686f6b; font-size: 9px; line-height: 1.6; margin: 11px 2px 0; }#monitorAudio { display: none; }
 @media (max-width: 760px) { .shell { width: min(600px, calc(100% - 32px)); }.intro { padding-top: 42px; }.workspace { grid-template-columns: 1fr; }.monitor-panel { min-height: 408px; }.monitor-center { min-height: 218px; }.device-panel { min-height: 212px; }.output-panel { min-height: 206px; } }
 @media (max-width: 430px) { .shell { width: calc(100% - 24px); }.topbar { height: 62px; }.top-meta { font-size: 8px; gap: 6px; }.intro { align-items: start; flex-direction: column; gap: 20px; padding: 36px 0 25px; }.scan-button { align-self: flex-end; margin-top: -2px; }.device-panel, .monitor-panel { padding-left: 15px; padding-right: 15px; }.monitor-label { font-size: 7px; }.statusbar { align-items: flex-start; flex-direction: column; padding: 11px 12px; gap: 7px; }.status-right { padding-left: 14px; }.compact-select { width: 164px; } }
+
+
+/* Compact control-first layout */
+.shell { padding-bottom: 22px; }
+.intro { padding: 28px 0 19px; }
+.eyebrow { margin-bottom: 8px; }
+h1 { font-size: clamp(27px, 3.5vw, 36px); }
+.lede { margin-top: 7px; }
+.workspace { display: flex; flex-direction: column; gap: 11px; }
+.routing-column { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.monitor-panel { min-height: 0; padding: 11px 15px 9px; }
+.monitor-panel .panel-heading { margin-bottom: 8px; }
+.monitor-control-row { display: grid; grid-template-columns: 136px minmax(0, 1fr) 94px; align-items: center; gap: 17px; }
+.monitor-label { font-size: 8px; }
+.start-button { height: 37px; }
+.gain-control { min-width: 0; }
+.gain-readout { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1px; color: #aeb6b1; font-size: 10px; }
+.volume-readout { padding: 0; background: transparent; font-size: 20px; font-weight: 450; letter-spacing: -.03em; }
+.volume-readout span { margin-left: 1px; font-size: 11px; }
+.volume-control { gap: 8px; }
+.volume-control input { height: 15px; }
+.scale-label { min-width: 29px; font-size: 8px; }
+.gain-foot { margin: 1px 0 0; font-size: 8px; }
+.monitor-control-row .meter { position: static; inset: auto; transform: none; display: flex; flex-direction: column; gap: 4px; height: 28px; }
+.monitor-control-row .meter-track { min-height: 11px; }
+.permission-note { min-height: 0; margin: 5px 0 0; text-align: left; font-size: 8px; }
+.device-panel, .output-panel { min-height: 0; padding: 13px 15px 11px; }
+.field-label { margin: 14px 0 6px; }
+.select-wrap select { height: 36px; font-size: 11px; }
+.select-chevron { top: 14px; }
+.field-foot { margin-top: 8px; }
+.panel-rule { margin: 8px 0 7px; }
+.output-panel .field-label { margin-top: 14px; }
+.output-panel .panel-rule { margin-top: 8px; margin-bottom: 7px; }
+.compact-select { width: min(178px, 68%); }
+.compact-select select { height: 28px; }
+.compact-select .select-chevron { top: 10px; }
+.statusbar { margin-top: 11px; min-height: 36px; }
+.footnote { margin-top: 7px; }
+@media (max-width: 760px) {
+  .shell { width: min(660px, calc(100% - 32px)); }
+  .intro { padding: 25px 0 16px; }
+  .monitor-control-row { grid-template-columns: 118px minmax(0, 1fr) 70px; gap: 11px; }
+  .routing-column { gap: 9px; }
+  .device-panel, .output-panel { padding: 12px 12px 10px; }
+  .monitor-panel { min-height: 0; }
+  .device-panel { min-height: 0; }
+  .output-panel { min-height: 0; }
+}
+@media (max-width: 500px) {
+  .shell { width: calc(100% - 24px); }
+  .intro { align-items: end; flex-direction: row; gap: 8px; padding: 22px 0 14px; }
+  .eyebrow { font-size: 7px; margin-bottom: 7px; }
+  h1 { font-size: clamp(22px, 6.8vw, 30px); }
+  .lede { font-size: 10px; margin-top: 5px; }
+  .scan-button { min-height: 33px; padding: 0 9px; font-size: 9px; white-space: nowrap; }
+  .scan-button svg { width: 13px; }
+  .monitor-panel { padding: 10px 10px 8px; }
+  .monitor-control-row { grid-template-columns: 97px minmax(0, 1fr); gap: 9px; }
+  .monitor-control-row .meter { display: none; }
+  .start-button { height: 35px; font-size: 10px; }
+  .gain-readout { font-size: 9px; }
+  .volume-readout { font-size: 17px; }
+  .volume-control { gap: 5px; }
+  .scale-label { min-width: 24px; font-size: 7px; }
+  .gain-foot { font-size: 7px; }
+  .routing-column { grid-template-columns: 1fr; }
+  .device-panel, .output-panel { padding: 12px 13px 10px; }
+  .statusbar { padding: 0 10px; }
+  .status-copy { font-size: 9px; }
+  .status-right { font-size: 7px; }
+}
