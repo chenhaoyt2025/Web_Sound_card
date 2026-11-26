@@ -12,7 +12,7 @@
   const state = {
     devices: [], inputInfo: new Map(), inputStream: null, context: null,
     source: null, inputSplitter: null, routeMerger: null, gain: null,
-    analyser: null, destination: null, audio: $("monitorAudio"),
+    analyser: null, destination: null, outputStreamDestination: null, audio: $("monitorAudio"),
     activeInputId: "", inputChannelCount: 0, inputRouteMode: "mono",
     inputRouteStart: 0, animFrame: 0, hasPermission: false,
     busy: false, scanning: false, probeToken: 0,
@@ -90,14 +90,14 @@
     const outputs = devices.filter((device) => device.kind === "audiooutput" && device.deviceId && device.deviceId !== "default");
     const settings = readSettings();
     const oldChoice = outputSelect.value;
-    const selected = oldChoice || settings.outputId || "";
+    const desired = oldChoice || settings.outputId || "";
     outputSelect.replaceChildren(option("", "系统默认输出设备"));
-    const present = outputs.some((device) => device.deviceId === selected);
-    if (selected && !present) outputSelect.append(option(selected, "上次选择的输出设备 · 未连接", true));
+    const present = outputs.some((device) => device.deviceId === desired);
+    if (desired && !present) outputSelect.append(option(desired, "上次选择的输出设备 · 未连接", true));
     for (const [index, device] of outputs.entries()) {
       outputSelect.append(option(device.deviceId, device.label.trim() || `Audio output ${index + 1}`));
     }
-    outputSelect.value = selected && !present ? selected : selected;
+    outputSelect.value = desired && present ? desired : "";
   }
   async function scanDevices({ quiet = false, requestPermission = false } = {}) {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -115,7 +115,7 @@
       if (requestPermission && !state.hasPermission && navigator.mediaDevices.getUserMedia) {
         try {
           permissionStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+            audio: true,
             video: false,
           });
           state.hasPermission = true;
@@ -138,10 +138,12 @@
         renderInputChannelOptions(state.inputInfo.get(BROWSER_TAB)?.actualChannels || 0, BROWSER_TAB);
       } else if (selectedId && selectedId !== MISSING && selectedId !== "__no_input__" && state.hasPermission) {
         if (state.activeInputId === selectedId && state.inputStream) {
-          const info = audioTrackInfo(state.inputStream.getAudioTracks()[0]);
+          const liveInfo = audioTrackInfo(state.inputStream.getAudioTracks()[0]);
+          const liveChannels = liveInfo.actualChannels || state.inputChannelCount;
+          const info = { ...liveInfo, actualChannels: liveChannels, availableChannels: liveChannels };
           state.inputInfo.set(selectedId, info);
           renderInputs(state.devices);
-          inputChannelSelect.value = inputChannelSelect.value || "";
+          renderInputChannelOptions(liveChannels, selectedId);
         } else {
           await probeInputChannels(selectedId, { quiet: true });
         }
@@ -184,7 +186,11 @@
   function updateOutputMode() {
     saveSettings({ outputMode: outputMode.value });
     if (!state.context || !state.destination) return;
-    const channels = outputMode.value === "stereo" ? 2 : 1;
+    const requestedChannels = outputMode.value === "stereo" ? 2 : 1;
+    const maximum = state.destination === state.context.destination
+      ? Number(state.destination.maxChannelCount) || 2
+      : 2;
+    const channels = Math.min(requestedChannels, maximum);
     try {
       state.destination.channelCount = channels;
       state.destination.channelCountMode = "explicit";
@@ -193,11 +199,44 @@
       setStatus(`无法切换输出声道：${error.message || error}`, "warn");
     }
   }
+  async function routeOutput(deviceId) {
+    if (!state.context || !state.analyser) return;
+    try { state.analyser.disconnect(); } catch { /* No output edge yet. */ }
+    state.audio.pause();
+    state.audio.srcObject = null;
+    state.outputStreamDestination?.stream.getTracks().forEach((track) => track.stop());
+    state.outputStreamDestination = null;
+
+    if (typeof state.context.setSinkId === "function") {
+      await state.context.setSinkId(deviceId || "");
+      state.destination = state.context.destination;
+      updateOutputMode();
+      state.analyser.connect(state.destination);
+      return;
+    }
+    if (!deviceId) {
+      state.destination = state.context.destination;
+      updateOutputMode();
+      state.analyser.connect(state.destination);
+      return;
+    }
+    if (typeof state.audio.setSinkId !== "function") {
+      throw new Error("此浏览器不支持选择非默认输出设备，请切回系统默认输出。");
+    }
+    const streamDestination = state.context.createMediaStreamDestination();
+    state.outputStreamDestination = streamDestination;
+    state.destination = streamDestination;
+    updateOutputMode();
+    state.audio.srcObject = streamDestination.stream;
+    await state.audio.setSinkId(deviceId);
+    state.analyser.connect(streamDestination);
+    await state.audio.play();
+  }
   async function setOutputDevice(deviceId) {
     saveSettings({ outputId: deviceId });
-    if (!state.audio.srcObject || typeof state.audio.setSinkId !== "function") return;
+    if (!state.context || !state.analyser) return;
     try {
-      await state.audio.setSinkId(deviceId);
+      await routeOutput(deviceId);
       setStatus(deviceId ? "输出设备已切换。" : "正在使用系统默认输出设备。", state.inputStream ? "active" : "idle");
     } catch (error) {
       setStatus(`无法切换输出设备：${error.message || error}`, "warn");
@@ -253,9 +292,30 @@
     return {
       actualChannels,
       maxChannels,
-      availableChannels: Math.min(32, Math.max(actualChannels, maxChannels)),
+      availableChannels: Math.min(32, actualChannels),
       sampleRate: Number(settings.sampleRate) || 0,
     };
+  }
+  async function readInputTrackInfo(track) {
+    const info = audioTrackInfo(track);
+    const supportsChannelCount = navigator.mediaDevices?.getSupportedConstraints?.()?.channelCount;
+    const targetChannels = Math.min(32, info.maxChannels);
+    if (!targetChannels || !supportsChannelCount || !track?.applyConstraints || info.actualChannels === targetChannels) {
+      return info;
+    }
+    try {
+      await track.applyConstraints({ channelCount: { exact: targetChannels } });
+      const updated = audioTrackInfo(track);
+      if (updated.actualChannels) return updated;
+      return {
+        ...updated,
+        actualChannels: targetChannels,
+        availableChannels: targetChannels,
+        exactChannelConstraint: true,
+      };
+    } catch {
+      return info;
+    }
   }
   function renderInputChannelOptions(channelCount, deviceId) {
     const count = Math.max(0, Math.min(32, Number(channelCount) || 0));
@@ -295,17 +355,8 @@
     const token = ++state.probeToken;
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: { exact: deviceId },
-          channelCount: { ideal: 32 },
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-        video: false,
-      });
-      const info = audioTrackInfo(stream.getAudioTracks()[0]);
+      stream = await getPhysicalInputStream(deviceId, 0);
+      const info = await readInputTrackInfo(stream.getAudioTracks()[0]);
       if (token !== state.probeToken) return null;
       state.inputInfo.set(deviceId, info);
       renderInputs(state.devices);
@@ -328,27 +379,33 @@
       stream?.getTracks().forEach((track) => track.stop());
     }
   }
-  async function getPhysicalInputStream(deviceId) {
-    const info = state.inputInfo.get(deviceId);
-    const requestedChannels = info?.availableChannels || 32;
-    const audio = {
-      deviceId: { exact: deviceId },
-      channelCount: info?.availableChannels
-        ? { exact: requestedChannels }
-        : { ideal: requestedChannels },
+  async function getPhysicalInputStream(deviceId, requestedChannels = null) {
+    const base = { deviceId: { exact: deviceId } };
+    const tuned = {
+      ...base,
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: false,
     };
-    try {
-      return await navigator.mediaDevices.getUserMedia({ audio, video: false });
-    } catch (error) {
-      if (!info?.availableChannels || requestedChannels <= 1) throw error;
-      return navigator.mediaDevices.getUserMedia({
-        audio: { ...audio, channelCount: { ideal: requestedChannels } },
-        video: false,
-      });
+    const attempts = [];
+    if (requestedChannels) {
+      attempts.push({ ...tuned, channelCount: { exact: requestedChannels } });
+      attempts.push({ ...base, channelCount: { ideal: requestedChannels } });
+    } else {
+      attempts.push({ ...tuned, channelCount: { ideal: 32 } });
+      attempts.push({ ...base, channelCount: { ideal: 32 } });
     }
+    attempts.push(base);
+    let lastError;
+    for (const audio of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio, video: false });
+      } catch (error) {
+        lastError = error;
+        if (error.name !== "OverconstrainedError" && error.name !== "TypeError") throw error;
+      }
+    }
+    throw lastError || new Error("无法打开所选输入设备。");
   }
   async function getBrowserTabAudioStream() {
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -397,16 +454,16 @@
     if (required > state.inputChannelCount) {
       throw new Error("当前输入流通道数不足，无法读取所选通道。");
     }
+    if (mode !== "stereo" && mode !== "mono") throw new Error("未知的输入通道模式。");
     state.inputSplitter.disconnect();
-    state.routeMerger.disconnect();
+    state.routeMerger?.disconnect();
+    state.routeMerger = state.context.createChannelMerger(mode === "stereo" ? 2 : 1);
+    state.routeMerger.channelInterpretation = "discrete";
     if (mode === "stereo") {
       state.inputSplitter.connect(state.routeMerger, first, 0);
       state.inputSplitter.connect(state.routeMerger, first + 1, 1);
-    } else if (mode === "mono") {
-      state.inputSplitter.connect(state.routeMerger, first, 0);
-      state.inputSplitter.connect(state.routeMerger, first, 1);
     } else {
-      throw new Error("未知的输入通道模式。");
+      state.inputSplitter.connect(state.routeMerger, first, 0);
     }
     state.routeMerger.connect(state.gain);
     state.inputRouteMode = mode;
@@ -426,7 +483,7 @@
     cleanupGraph();
     const stream = deviceId === BROWSER_TAB
       ? await (browserTabStream || getBrowserTabAudioStream())
-      : await getPhysicalInputStream(deviceId);
+      : await getPhysicalInputStream(deviceId, state.inputInfo.get(deviceId)?.actualChannels || null);
     state.inputStream = stream;
     state.activeInputId = deviceId;
     const track = stream.getAudioTracks()[0];
@@ -435,9 +492,9 @@
       if (state.inputStream === stream) stopMonitoring({ message: "输入设备已断开。" });
     }, { once: true });
     if (deviceId !== BROWSER_TAB) state.hasPermission = true;
-    const info = audioTrackInfo(track);
-    const actualChannels = info.actualChannels || info.availableChannels;
-    if (!actualChannels) throw new Error("浏览器没有报告输入通道数，无法安全配置声道。");
+    const info = await readInputTrackInfo(track);
+    const actualChannels = info.actualChannels;
+    if (!actualChannels) throw new Error("浏览器没有报告扫描后的实际输入通道数；为避免把单声道误配成多声道，暂不启用。");
     state.inputChannelCount = actualChannels;
     state.inputInfo.set(deviceId, { ...info, actualChannels, availableChannels: actualChannels });
     renderInputs(state.devices);
@@ -446,23 +503,15 @@
     state.source = state.context.createMediaStreamSource(stream);
     state.inputSplitter = state.context.createChannelSplitter(actualChannels);
     state.inputSplitter.channelInterpretation = "discrete";
-    state.routeMerger = state.context.createChannelMerger(2);
-    state.routeMerger.channelInterpretation = "discrete";
     state.gain = state.context.createGain();
     state.gain.gain.value = Number(volumeSlider.value) / 100;
     state.analyser = state.context.createAnalyser();
     state.analyser.fftSize = 512;
-    state.destination = state.context.createMediaStreamDestination();
     state.source.connect(state.inputSplitter);
     applyInputRoute();
     state.gain.connect(state.analyser);
-    state.analyser.connect(state.destination);
-    updateOutputMode();
-    state.audio.srcObject = state.destination.stream;
     const selectedOutput = outputSelect.value;
-    if (typeof state.audio.setSinkId === "function") await state.audio.setSinkId(selectedOutput);
-    else if (selectedOutput) throw new Error("此浏览器不支持选择输出设备，请使用系统默认输出或更新浏览器。");
-    await state.audio.play();
+    await routeOutput(selectedOutput);
     const settings = track.getSettings();
     const rate = settings.sampleRate ? ` · ${settings.sampleRate} Hz` : "";
     const routeText = inputChannelSelect.selectedOptions[0]?.textContent || (actualChannels + " ch");
@@ -480,6 +529,8 @@
     for (const node of [state.source, state.inputSplitter, state.routeMerger, state.gain, state.analyser, state.destination]) {
       try { node?.disconnect(); } catch { /* Already disconnected. */ }
     }
+    state.outputStreamDestination?.stream.getTracks().forEach((track) => track.stop());
+    state.outputStreamDestination = null;
     state.source = state.inputSplitter = state.routeMerger = state.gain = state.analyser = state.destination = null;
     state.activeInputId = "";
     state.inputChannelCount = 0;
